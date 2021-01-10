@@ -2,9 +2,12 @@ from __future__ import unicode_literals
 
 import json
 import os
+import random
 import shutil
 import time
+from datetime import datetime, timezone
 from random import randint
+from uuid import uuid4
 
 from requests_toolbelt import MultipartEncoder
 
@@ -42,8 +45,7 @@ def upload_story_photo(self, photo, upload_id=None):
         "upload_id": upload_id,
         "_uuid": self.uuid,
         "_csrftoken": self.token,
-        "image_compression": '{"lib_name":"jt","lib_version":"1.3.0",'
-        + 'quality":"87"}',
+        "image_compression": '{"lib_name":"jt","lib_version":"1.3.0",' + 'quality":"87"}',
         "photo": (
             "pending_media_%s.jpg" % upload_id,
             photo_bytes,
@@ -51,16 +53,35 @@ def upload_story_photo(self, photo, upload_id=None):
             {"Content-Transfer-Encoding": "binary"},
         ),
     }
-    m = MultipartEncoder(data, boundary=self.uuid)
+
+    photo_data = open(photo, "rb").read()
+    photo_len = str(len(photo_data))
+    upload_name = "{upload_id}_0_{rand}".format(upload_id=upload_id, rand=random.randint(1000000000, 9999999999))
+    rupload_params = {
+        "retry_context": '{"num_step_auto_retry":0,"num_reupload":0,"num_step_manual_retry":0}',
+        "media_type": "1",
+        "xsharing_user_ids": "[]",
+        "upload_id": upload_id,
+        "image_compression": json.dumps({"lib_name": "moz", "lib_version": "3.1.m", "quality": "80"}),
+    }
+
+    waterfall_id = str(uuid4())
     self.session.headers.update(
         {
-            "Accept-Encoding": "gzip, deflate",
-            "Content-type": m.content_type,
-            "Connection": "close",
-            "User-Agent": self.user_agent,
+            "Accept-Encoding": "gzip",
+            "X-Instagram-Rupload-Params": json.dumps(rupload_params),
+            "X_FB_PHOTO_WATERFALL_ID": waterfall_id,
+            "X-Entity-Type": "image/jpeg",
+            "Offset": "0",
+            "X-Entity-Name": upload_name,
+            "X-Entity-Length": photo_len,
+            "Content-Type": "application/octet-stream",
+            "Content-Length": photo_len,
+            "Accept-Encoding": "gzip",
         }
     )
-    response = self.session.post(config.API_URL + "upload/photo/", data=m.to_string())
+
+    response = self.session.post(f"https://{config.API_DOMAIN}/rupload_igphoto/{upload_name}", data=photo_data)
 
     if response.status_code == 200:
         upload_id = json.loads(response.text).get("upload_id")
